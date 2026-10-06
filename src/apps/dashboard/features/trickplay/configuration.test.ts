@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { action } from './trickplay';
+import { action } from '../../routes/playback/trickplay';
 
 const mocks = vi.hoisted(() => ({
     getConfiguration: vi.fn(),
