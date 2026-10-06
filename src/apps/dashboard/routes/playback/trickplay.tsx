@@ -20,8 +20,12 @@ import Alert from '@mui/material/Alert';
 import { getSystemApi } from '@jellyfin/sdk/lib/utils/api/system-api';
 import { TrickplayScanBehavior } from '@jellyfin/sdk/lib/generated-client/models/trickplay-scan-behavior';
 import { ProcessPriorityClass } from '@jellyfin/sdk/lib/generated-client/models/process-priority-class';
+import type { TrickplayOptions } from '@jellyfin/sdk/lib/generated-client/models/trickplay-options';
 import { ActionData } from 'types/actionData';
 import { queryClient } from 'utils/query/queryClient';
+
+// Keep the new server option typed until it is included in the generated SDK.
+type ParallelTrickplayOptions = TrickplayOptions & { MaxConcurrentJobs?: number };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
     const api = ServerConnections.getApi();
@@ -32,8 +36,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     const { data: config } = await getSystemApi(api).getConfiguration();
 
-    const options = config.TrickplayOptions;
+    const options = config.TrickplayOptions as ParallelTrickplayOptions | undefined;
     if (!options) throw new Error('Unexpected null TrickplayOptions');
+
+    const maxConcurrentJobs = Number(data.MaxConcurrentJobs ?? 1);
+    if (!Number.isInteger(maxConcurrentJobs) || maxConcurrentJobs < 1 || maxConcurrentJobs > 32) {
+        throw new Error(globalize.translate('TrickplayConcurrencyInvalid'));
+    }
 
     options.EnableHwAcceleration = data.HwAcceleration?.toString() === 'on';
     options.EnableHwEncoding = data.HwEncoding?.toString() === 'on';
@@ -47,6 +56,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     options.Qscale = parseInt(data.Qscale.toString() || '4', 10);
     options.JpegQuality = parseInt(data.JpegQuality.toString() || '90', 10);
     options.ProcessThreads = parseInt(data.TrickplayThreads.toString() || '1', 10);
+    options.MaxConcurrentJobs = maxConcurrentJobs;
 
     await getSystemApi(api)
         .updateConfiguration({ serverConfiguration: config });
@@ -65,6 +75,7 @@ export const Component = () => {
     const actionData = useActionData() as ActionData | undefined;
     const { data: defaultConfig, isPending, isError } = useConfiguration();
     const isSubmitting = navigation.state === 'submitting';
+    const trickplayOptions = defaultConfig?.TrickplayOptions as ParallelTrickplayOptions | undefined;
 
     if (!defaultConfig || isPending) {
         return <Loading />;
@@ -240,6 +251,23 @@ export const Component = () => {
                                     htmlInput: {
                                         min: 2,
                                         max: 31,
+                                        required: true
+                                    }
+                                }}
+                            />
+
+                            <TextField
+                                label={globalize.translate('LabelTrickplayConcurrentJobs')}
+                                name='MaxConcurrentJobs'
+                                type='number'
+                                inputMode='numeric'
+                                defaultValue={trickplayOptions?.MaxConcurrentJobs ?? 1}
+                                helperText={globalize.translate('LabelTrickplayConcurrentJobsHelp')}
+                                slotProps={{
+                                    htmlInput: {
+                                        min: 1,
+                                        max: 32,
+                                        step: 1,
                                         required: true
                                     }
                                 }}
